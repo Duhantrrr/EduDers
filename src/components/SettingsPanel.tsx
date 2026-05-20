@@ -4,7 +4,7 @@
  */
 
 import { AppSettings } from '../types';
-import { Bell, ShieldCheck, Moon, Github, Coffee } from 'lucide-react';
+import { Bell, ShieldCheck, Moon, Github, Coffee, Smartphone, ExternalLink, Play } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Props {
@@ -26,6 +26,17 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
     }
   };
 
+  const testNotification = () => {
+    if (Notification.permission === 'granted') {
+      new Notification('Öğrenci Asistanı', {
+        body: 'Bildirim sistemi başarıyla çalışıyor! APK için hazırız.',
+        icon: '/icon-512.png'
+      });
+    } else {
+      alert('Lütfen önce bildirimleri aktif edin.');
+    }
+  };
+
   return (
     <div className="space-y-6 pb-4">
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
@@ -34,24 +45,67 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
         </div>
         
         <div className="divide-y divide-neutral-800">
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Akıllı Bildirimler</p>
+                  <p className="text-[10px] text-neutral-500">Sınavdan 1 gün önce hatırlatır.</p>
+                </div>
+              </div>
+              <button 
+                onClick={toggleNotifications}
+                className={`w-12 h-6 rounded-full transition-all relative ${settings.notificationsEnabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+              >
+                <motion.div 
+                  animate={{ x: settings.notificationsEnabled ? 26 : 2 }}
+                  className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm"
+                />
+              </button>
+            </div>
+
+            {settings.notificationsEnabled && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="pt-2 pl-13 space-y-2"
+              >
+                <label className="text-xs text-neutral-400 block">Günlük Hatırlatma Saati</label>
+                <div className="flex items-center gap-4">
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="23" 
+                    value={settings.notificationHour}
+                    onChange={(e) => setSettings({ ...settings, notificationHour: parseInt(e.target.value) })}
+                    className="flex-1 accent-emerald-500 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-sm font-mono bg-neutral-800 px-3 py-1 rounded-lg border border-neutral-700">
+                    {settings.notificationHour.toString().padStart(2, '0')}:00
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
           <div className="p-4 flex items-center justify-between transition-colors hover:bg-neutral-800/20">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500">
-                <Bell className="w-5 h-5" />
+              <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500">
+                <Play className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm font-medium">Akıllı Bildirimler</p>
-                <p className="text-[10px] text-neutral-500">Sınavdan 1 gün önce hatırlatır.</p>
+                <p className="text-sm font-medium">Test Bildirimi</p>
+                <p className="text-[10px] text-neutral-500">Sistemi kontrol edin.</p>
               </div>
             </div>
             <button 
-              onClick={toggleNotifications}
-              className={`w-12 h-6 rounded-full transition-all relative ${settings.notificationsEnabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+              onClick={testNotification}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-xs font-bold rounded-lg transition-all"
             >
-              <motion.div 
-                animate={{ x: settings.notificationsEnabled ? 26 : 2 }}
-                className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm"
-              />
+              Gönder
             </button>
           </div>
 
@@ -73,19 +127,25 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
       </div>
 
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-4">
-        <div className="flex items-center gap-2 text-neutral-400">
+        <div className="flex items-center gap-2 text-emerald-500">
           <ShieldCheck className="w-4 h-4" />
-          <span className="text-xs">Verileriniz yerel depolamada saklanır.</span>
+          <span className="text-xs">Verileriniz Firebase bulut depolama ile güvende.</span>
         </div>
         
         <div className="pt-2 border-t border-neutral-800 flex flex-col gap-2">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/50">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-4 h-4 text-emerald-500" />
+              <span className="text-sm">APK / Web2App Durumu</span>
+            </div>
+            <span className="text-[10px] px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-full font-bold uppercase">Hazır</span>
+          </div>
           <button className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-800 transition-colors">
-            <span className="text-sm">Gizlilik Politikası</span>
+            <div className="flex items-center gap-3">
+              <ExternalLink className="w-4 h-4 text-neutral-500" />
+              <span className="text-sm">Gizlilik Politikası</span>
+            </div>
             <span className="text-xs text-neutral-500 underline">Görüntüle</span>
-          </button>
-          <button className="flex items-center justify-between p-3 rounded-xl hover:bg-neutral-800 transition-colors">
-            <span className="text-sm">Versiyon</span>
-            <span className="text-xs text-neutral-500">v1.2.0-beta</span>
           </button>
         </div>
       </div>

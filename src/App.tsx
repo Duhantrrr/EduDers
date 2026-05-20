@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, cloneElement, isValidElement, ReactNode, ReactElement } from 'react';
 import { CalendarEvent, WeeklySchedule, AppSettings } from './types';
-import { Bell, Calendar, Scan, Settings, BookOpen, Sparkles } from 'lucide-react';
+import { Bell, Calendar, Scan, Settings, BookOpen, Sparkles, LogOut, LogIn, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import CalendarGrid from './components/CalendarGrid';
 import AIAssistant from './components/AIAssistant';
@@ -18,36 +18,91 @@ import CountdownCards from './components/CountdownCards';
 import { TURKISH_HOLIDAYS } from './constants';
 import { format, addDays, isSameDay, parseISO, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { auth, db, signIn, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION } from './lib/firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'ocr' | 'schedule' | 'settings' | 'ai'>('calendar');
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [schedule, setSchedule] = useState<WeeklySchedule[]>([]);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     notificationsEnabled: false,
+    notificationHour: 19, // Default to 7 PM
     theme: 'dark'
   });
 
-  // Global callback for OCR
+  // Auth State
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Sync
+  useEffect(() => {
+    if (!user) {
+      setEvents([]);
+      setSchedule([]);
+      return;
+    }
+
+    const eventsQuery = query(collection(db, EVENTS_COLLECTION), where('userId', '==', user.uid));
+    const scheduleQuery = query(collection(db, SCHEDULE_COLLECTION), where('userId', '==', user.uid));
+
+    const unsubEvents = onSnapshot(eventsQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as CalendarEvent);
+      setEvents(data);
+      setDbError(null);
+    }, (error) => {
+      console.error('Firestore Events Error:', error);
+      if (error.code === 'not-found') {
+        setDbError('Veritabanı henüz oluşturuluyor olabilir. Lütfen sayfayı yenileyin veya az sonra tekrar deneyin.');
+      } else {
+        setDbError('Veritabanı bağlantısında bir sorun oluştu.');
+      }
+    });
+
+    const unsubSchedule = onSnapshot(scheduleQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as WeeklySchedule);
+      setSchedule(data);
+    }, (error) => {
+      console.error('Firestore Schedule Error:', error);
+    });
+
+    return () => {
+      unsubEvents();
+      unsubSchedule();
+    };
+  }, [user]);
+
+  // Global callback for OCR (keeping it for compatibility, but it should use Firebase)
   useEffect(() => {
     (window as any).addLessonsToSchedule = (lessons: WeeklySchedule[]) => {
-      setSchedule(prev => [...prev, ...lessons]);
+      if (!user) return;
+      lessons.forEach(lesson => {
+        const id = Math.random().toString(36).substr(2, 9);
+        setDoc(doc(db, SCHEDULE_COLLECTION, id), {
+          ...lesson,
+          id,
+          userId: user.uid,
+          updatedAt: serverTimestamp()
+        });
+      });
       setActiveTab('schedule');
     };
     return () => { (window as any).addLessonsToSchedule = undefined; };
-  }, []);
+  }, [user]);
 
-  // Load from LocalStorage
+  // Load settings from LocalStorage (settings remain local for now)
   useEffect(() => {
-    const savedEvents = localStorage.getItem('asistan_events');
-    const savedSchedule = localStorage.getItem('asistan_schedule');
     const savedSettings = localStorage.getItem('asistan_settings');
-
-    if (savedEvents) setEvents(JSON.parse(savedEvents));
-    if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
     if (savedSettings) setSettings(JSON.parse(savedSettings));
 
-    // Request Notification permission
     if (Notification.permission === 'default') {
       Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
@@ -57,15 +112,7 @@ export default function App() {
     }
   }, []);
 
-  // Save to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('asistan_events', JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem('asistan_schedule', JSON.stringify(schedule));
-  }, [schedule]);
-
+  // Save settings
   useEffect(() => {
     localStorage.setItem('asistan_settings', JSON.stringify(settings));
   }, [settings]);
@@ -74,42 +121,149 @@ export default function App() {
   const checkNotifications = useCallback(() => {
     if (!settings.notificationsEnabled || Notification.permission !== 'granted') return;
 
-    const tomorrow = addDays(new Date(), 1);
-    const tomorrowStr = format(tomorrow, 'yyyy-MM-dd');
+    const now = new Date();
+    const currentHour = now.getHours();
 
-    // Check confirmed exam events and holidays for tomorrow
+    // Only process if current hour is greater than or equal to configured notification hour
+    if (currentHour < settings.notificationHour) return;
+
+    const tomorrow = addDays(now, 1);
+    const tomorrowStr = format(tomorrow, 'yyyy-MM-dd');
+    const todayStr = format(now, 'yyyy-MM-dd');
+
     const allNotifiableEvents = [...events, ...TURKISH_HOLIDAYS as CalendarEvent[]];
 
     allNotifiableEvents.forEach(event => {
       const eventDate = parseISO(event.date);
       if (isSameDay(eventDate, tomorrow) && (event.confirmed || event.type === 'holiday')) {
-        const notificationKey = `notif_${event.id}_${tomorrowStr}`;
+        // notificationKey includes todayStr so we only notify once per day relative to tomorrow's event
+        const notificationKey = `notif_${event.id}_for_${tomorrowStr}_sent_on_${todayStr}`;
+        
         if (!localStorage.getItem(notificationKey)) {
           new Notification(event.type === 'holiday' ? 'Tatil Hatırlatıcısı' : 'Sınav Hatırlatıcısı', {
             body: `Yarın ${event.title} ${event.type === 'holiday' ? 'sebebiyle resmi tatil!' : 'sınavınız var! Unutmayın.'}`,
+            icon: '/icon-512.png',
+            badge: '/icon-512.png'
           });
           localStorage.setItem(notificationKey, 'sent');
         }
       }
     });
-  }, [events, settings.notificationsEnabled]);
+  }, [events, settings.notificationsEnabled, settings.notificationHour]);
 
   useEffect(() => {
-    const interval = setInterval(checkNotifications, 1000 * 60 * 60); // Check every hour
-    checkNotifications(); // Initial check
+    const interval = setInterval(checkNotifications, 1000 * 60 * 15); // Check every 15 minutes
+    checkNotifications();
     return () => clearInterval(interval);
   }, [checkNotifications]);
 
-  const addEvents = (newEvents: CalendarEvent[]) => {
-    setEvents(prev => [...prev, ...newEvents]);
+  const addEvents = async (newEvents: CalendarEvent[]) => {
+    if (!user) return;
+    for (const event of newEvents) {
+      await setDoc(doc(db, EVENTS_COLLECTION, event.id), {
+        ...event,
+        userId: user.uid,
+        updatedAt: serverTimestamp()
+      });
+    }
   };
 
-  const removeEvent = (id: string) => {
-    setEvents(prev => prev.filter(e => e.id !== id));
+  const removeEvent = async (id: string) => {
+    if (!user) return;
+    await deleteDoc(doc(db, EVENTS_COLLECTION, id));
   };
 
+  const handleUpdateSchedule = async (newSchedule: WeeklySchedule[]) => {
+    if (!user) return;
+    // For simplicity, we just add missing ones or update. 
+    // In a real app we might diff or clear and re-add.
+    for (const item of newSchedule) {
+      const id = item.id || Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, SCHEDULE_COLLECTION, id), {
+        ...item,
+        id,
+        userId: user.uid,
+        updatedAt: serverTimestamp()
+      });
+    }
+  };
+
+  const deleteScheduleItem = async (id: string) => {
+    if (!user) return;
+    await deleteDoc(doc(db, SCHEDULE_COLLECTION, id));
+  };
+
+  const clearAllSchedule = async () => {
+    if (!user || schedule.length === 0) return;
+    
+    // Using writeBatch for optimized deletion
+    const { writeBatch } = await import('firebase/firestore');
+    const batch = writeBatch(db);
+    
+    try {
+      schedule.forEach((item) => {
+        if (item.id) {
+          const docRef = doc(db, SCHEDULE_COLLECTION, item.id);
+          batch.delete(docRef);
+        }
+      });
+      
+      await batch.commit();
+    } catch (error) {
+      console.error("Clear schedule error:", error);
+      setDbError("Ders programı temizlenirken bir hata oluştu.");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
+        <Sparkles className="w-8 h-8 text-emerald-500 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 text-center space-y-8">
+        <div className="w-20 h-20 rounded-3xl bg-emerald-500 flex items-center justify-center shadow-2xl shadow-emerald-500/20">
+          <Calendar className="w-10 h-10 text-white" />
+        </div>
+        <div className="space-y-3">
+          <h1 className="text-3xl font-extrabold tracking-tight">Öğrenci Asistanı</h1>
+          <p className="text-neutral-400 max-w-xs mx-auto">
+            Ders programınız ve sınavlarınız her an yanınızda. Giriş yaparak verilerinizi bulutla senkronize edin.
+          </p>
+        </div>
+        <button
+          onClick={signIn}
+          className="bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center gap-3 transition-all hover:scale-105 active:scale-95"
+        >
+          <LogIn className="w-5 h-5" />
+          Google ile Giriş Yap
+        </button>
+      </div>
+    );
+  }
+
+  // Header
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-neutral-800">
+      <AnimatePresence>
+        {dbError && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 left-4 right-4 z-[100] bg-red-500 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-medium"
+          >
+            <Bell className="w-5 h-5 flex-shrink-0" />
+            <p className="flex-1">{dbError}</p>
+            <button onClick={() => setDbError(null)} className="p-1 hover:bg-black/10 rounded-lg">Kapat</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-800">
         <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
@@ -119,13 +273,23 @@ export default function App() {
             </div>
             <h1 className="font-semibold text-lg tracking-tight">Öğrenci Asistanı</h1>
           </div>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setActiveTab('settings')}
-            className={`p-2 rounded-full transition-colors ${activeTab === 'settings' ? 'bg-neutral-800 text-emerald-400' : 'text-neutral-400 hover:bg-neutral-900'}`}
-          >
-            <Settings className="w-6 h-6" />
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={signOut}
+              className="p-2 text-neutral-500 hover:text-red-400 hover:bg-neutral-900 rounded-full transition-all"
+              title="Çıkış Yap"
+            >
+              <LogOut className="w-5 h-5" />
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setActiveTab('settings')}
+              className={`p-2 rounded-full transition-colors ${activeTab === 'settings' ? 'bg-neutral-800 text-emerald-400' : 'text-neutral-400 hover:bg-neutral-900'}`}
+            >
+              <Settings className="w-6 h-6" />
+            </motion.button>
+          </div>
         </div>
       </header>
 
@@ -181,7 +345,7 @@ export default function App() {
             >
               <OCRUploader 
                 onEventsExtracted={addEvents} 
-                onScheduleExtracted={(newLessons) => setSchedule(prev => [...prev, ...newLessons])}
+                onScheduleExtracted={handleUpdateSchedule}
                 onComplete={() => setActiveTab('schedule')}
               />
             </motion.div>
@@ -196,7 +360,7 @@ export default function App() {
             >
               <AIAssistant 
                 onEventsExtracted={addEvents} 
-                onScheduleExtracted={(newLessons) => setSchedule(prev => [...prev, ...newLessons])}
+                onScheduleExtracted={handleUpdateSchedule}
               />
             </motion.div>
           )}
@@ -208,7 +372,12 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <ScheduleEditor schedule={schedule} setSchedule={setSchedule} />
+              <ScheduleEditor 
+                schedule={schedule} 
+                setSchedule={handleUpdateSchedule} 
+                onDelete={deleteScheduleItem}
+                onClearAll={clearAllSchedule}
+              />
             </motion.div>
           )}
 

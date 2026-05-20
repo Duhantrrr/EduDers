@@ -10,13 +10,15 @@ import { WeeklySchedule } from '../types';
 interface Props {
   schedule: WeeklySchedule[];
   setSchedule: (schedule: WeeklySchedule[]) => void;
+  onDelete?: (id: string) => void;
+  onClearAll?: () => void;
 }
 
 const DAYS = [
   'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'
 ];
 
-export default function ScheduleEditor({ schedule, setSchedule }: Props) {
+export default function ScheduleEditor({ schedule, setSchedule, onDelete, onClearAll }: Props) {
   const [newEntry, setNewEntry] = useState<Partial<WeeklySchedule>>({
     day: 0,
     startTime: '09:00',
@@ -24,14 +26,33 @@ export default function ScheduleEditor({ schedule, setSchedule }: Props) {
     subject: ''
   });
 
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+
   const addEntry = () => {
     if (!newEntry.subject) return;
-    setSchedule([...schedule, { ...newEntry as WeeklySchedule }]);
+    setSchedule([{ ...newEntry as WeeklySchedule }]);
     setNewEntry({ ...newEntry, subject: '' });
   };
 
-  const removeEntry = (index: number) => {
-    setSchedule(schedule.filter((_, i) => i !== index));
+  const handleClearAll = async () => {
+    if (!isConfirmingClear) {
+      setIsConfirmingClear(true);
+      setTimeout(() => setIsConfirmingClear(false), 3000); // Reset after 3 seconds
+      return;
+    }
+    if (onClearAll) {
+      await onClearAll();
+      setIsConfirmingClear(false);
+    }
+  };
+
+  const removeEntry = (lesson: WeeklySchedule, index: number) => {
+    if (onDelete && lesson.id) {
+      onDelete(lesson.id);
+    } else {
+      // For items without IDs or when onDelete is not provided
+      setSchedule(schedule.filter((_, i) => i !== index));
+    }
   };
 
   return (
@@ -99,7 +120,22 @@ export default function ScheduleEditor({ schedule, setSchedule }: Props) {
       </div>
 
       <div className="space-y-4">
-        <h3 className="font-semibold text-lg">Haftalık Ders Programı</h3>
+        <div className="flex items-center justify-between px-1">
+          <h3 className="font-semibold text-lg">Haftalık Ders Programı</h3>
+          {schedule.length > 0 && onClearAll && (
+            <button 
+              onClick={handleClearAll}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                isConfirmingClear 
+                ? 'bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/20' 
+                : 'text-red-500 border-red-500/20 hover:bg-red-500/10'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> 
+              {isConfirmingClear ? 'Emin misiniz?' : 'Tümünü Sil'}
+            </button>
+          )}
+        </div>
         {DAYS.map((day, dayIdx) => {
           const dayLessons = schedule.filter(s => s.day === dayIdx).sort((a, b) => a.startTime.localeCompare(b.startTime));
           if (dayLessons.length === 0) return null;
@@ -122,7 +158,7 @@ export default function ScheduleEditor({ schedule, setSchedule }: Props) {
                       </div>
                     </div>
                     <button 
-                      onClick={() => removeEntry(schedule.indexOf(lesson))}
+                      onClick={() => removeEntry(lesson, schedule.indexOf(lesson))}
                       className="p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all"
                     >
                       <Trash2 className="w-4 h-4" />

@@ -16,6 +16,7 @@ export interface CalendarEvent {
 }
 
 export interface WeeklySchedule {
+  id?: string;
   day: number; // 0-6 (0 is Sunday, following JS Date.getDay())
   startTime: string; // HH:mm
   endTime: string; // HH:mm
@@ -24,6 +25,7 @@ export interface WeeklySchedule {
 
 export interface AppSettings {
   notificationsEnabled: boolean;
+  notificationHour: number; // 0-23
   theme: 'dark'; // Only dark mode as requested
 }
 

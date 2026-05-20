@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "A student calendar event (exam or holiday)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "time": { "type": "string" },
+        "type": { "type": "string", "enum": ["exam", "lesson", "holiday"] },
+        "description": { "type": "string" },
+        "confirmed": { "type": "boolean" },
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "date", "time", "type", "userId"]
+    },
+    "WeeklySchedule": {
+      "title": "WeeklySchedule",
+      "description": "A recurring weekly lesson",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "day": { "type": "number" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "subject": { "type": "string" },
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "day", "startTime", "endTime", "subject", "userId"]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": {
+      "schema": "CalendarEvent",
+      "description": "User specific calendar events"
+    },
+    "/schedule/{scheduleId}": {
+      "schema": "WeeklySchedule",
+      "description": "User specific weekly schedule items"
+    }
+  }
+}
