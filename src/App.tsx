@@ -36,6 +36,7 @@ function MainApp() {
   const [schedule, setSchedule] = useState<WeeklySchedule[]>([]);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadTimeout, setLoadTimeout] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
@@ -44,43 +45,43 @@ function MainApp() {
     theme: 'dark'
   });
 
-  const handleLogin = async (useRedirect = false) => {
+  const handleLogin = async () => {
     try {
       setLoginError(null);
-      if (useRedirect) {
-        signInRedirect();
-      } else {
-        await signIn();
-      }
+      // Force redirect as popups are problematic in preview/iframe
+      signInRedirect();
     } catch (error: any) {
-      console.error('Login Interaction Error:', error);
-      if (error.code === 'auth/popup-blocked') {
-        setLoginError('Tarayıcınız pencereyi engelledi. Pop-up engelleyiciyi kapatın veya "Yeni Sekmede Aç" butonunu kullanın.');
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        setLoginError('Giriş ekranı kapatıldı.');
-      } else {
-        setLoginError('Google ile giriş yapılırken bir sorun oluştu. Lütfen "Redirect" yöntemini deneyin.');
-      }
+      console.error('Login Error:', error);
+      setLoginError('Google ile giriş başlatılamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
     }
   };
 
-  // Auth State
+  // Auth State & Load Security
   useEffect(() => {
-    // Check for redirect result on mount
-    checkRedirectResult().catch(err => {
-      console.error('Redirect Result Error:', err);
-      // Only set error if it's not a common expected error
-      if (err.code !== 'auth/popup-closed-by-user') {
-        setLoginError('Yönlendirme sonrası giriş yapılırken bir hata oluştu.');
+    // Timeout if Firebase takes too long to respond
+    const timer = setTimeout(() => {
+      if (loading) setLoadTimeout(true);
+    }, 6000);
+
+    checkRedirectResult().then((result) => {
+      if (result?.user) {
+        setLoading(false);
       }
+    }).catch(err => {
+      console.error('Redirect Result Error:', err);
     });
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
+      clearTimeout(timer);
     });
-    return () => unsubscribe();
-  }, []);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [loading]);
 
   // Firestore Sync
   useEffect(() => {
@@ -257,40 +258,52 @@ function MainApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-        <Sparkles className="w-8 h-8 text-emerald-500 animate-pulse" />
+      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 text-center">
+        <motion.div 
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full mb-6"
+        />
+        {loadTimeout && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="space-y-4"
+          >
+            <p className="text-neutral-400 text-sm">Yükleme beklenenden uzun sürüyor...</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="bg-neutral-900 text-white px-6 py-2 rounded-xl text-xs font-medium border border-neutral-800"
+            >
+              Yeniden Dene
+            </button>
+          </motion.div>
+        )}
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 text-center space-y-8">
-        <div className="w-20 h-20 rounded-3xl bg-emerald-500 flex items-center justify-center shadow-2xl shadow-emerald-500/20">
-          <Calendar className="w-10 h-10 text-white" />
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-8 text-center">
+        <div className="mb-12 space-y-4">
+          <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/10">
+            <BookOpen className="w-10 h-10 text-emerald-500" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Öğrenci Asistanı</h1>
+            <p className="text-neutral-500 text-sm mt-1">Derslerinizi ve sınavlarınızı tek yerden yönetin</p>
+          </div>
         </div>
-        <div className="space-y-3">
-          <h1 className="text-3xl font-extrabold tracking-tight">Öğrenci Asistanı</h1>
-          <p className="text-neutral-400 max-w-xs mx-auto">
-            Ders programınız ve sınavlarınız her an yanınızda. Giriş yaparak verilerinizi bulutla senkronize edin.
-          </p>
-        </div>
+        
         <div className="space-y-4 w-full max-w-xs mx-auto">
           <motion.button
             whileTap={{ scale: 0.98 }}
-            onClick={() => handleLogin(false)}
-            className="w-full bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:bg-neutral-100 shadow-xl"
+            onClick={handleLogin}
+            className="w-full bg-emerald-500 text-white font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:bg-emerald-400 shadow-xl shadow-emerald-500/20"
           >
             <LogIn className="w-5 h-5" />
             Google ile Giriş Yap
-          </motion.button>
-
-          <motion.button
-            whileTap={{ scale: 0.98 }}
-            onClick={() => handleLogin(true)}
-            className="w-full bg-neutral-900 text-neutral-400 font-medium py-3 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:text-neutral-200 hover:bg-neutral-800 border border-neutral-800/50"
-          >
-            Yönlendirme ile Giriş (Alternatif)
           </motion.button>
 
           {loginError && (
@@ -300,23 +313,22 @@ function MainApp() {
               className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-2"
             >
               <p className="text-red-500 text-xs font-semibold">
-                {loginError}
+                Giriş Sorunu
               </p>
-              <p className="text-[10px] text-red-400/80 leading-relaxed">
-                Chrome/Safari kullanıyorsanız pop-up pencereler engellenmiş olabilir. 
-                Lütfen uygulamayı aşağıdaki butondan <b>yeni sekmede</b> açın.
+              <p className="text-[10px] text-red-300 leading-relaxed uppercase tracking-wider">
+                {loginError}
               </p>
             </motion.div>
           )}
 
-          <div className="pt-4">
+          <div className="pt-6 border-t border-neutral-900 mt-6">
             <a 
               href={window.location.href} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-xs text-emerald-500 font-medium hover:text-emerald-400 transition-colors py-2 px-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10"
+              className="inline-flex w-full items-center justify-center gap-2 text-[11px] text-neutral-500 font-medium hover:text-emerald-500 transition-colors py-3 px-4 rounded-xl bg-neutral-900/50 border border-neutral-800"
             >
-              Uygulamayı Yeni Sekmede Aç
+              Sorun Yaşıyorsanız Yeni Sekmede Açın
             </a>
           </div>
 
