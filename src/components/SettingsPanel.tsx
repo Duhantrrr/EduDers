@@ -26,14 +26,23 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
     }
   };
 
-  const testNotification = () => {
-    if (Notification.permission === 'granted') {
+  const testNotification = async () => {
+    if (Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setSettings({ ...settings, notificationsEnabled: true });
+        new Notification('Öğrenci Asistanı', {
+          body: 'Bildirimler onaylandı! Test başarılı.',
+          icon: '/icon-512.png'
+        });
+      }
+    } else if (Notification.permission === 'granted') {
       new Notification('Öğrenci Asistanı', {
         body: 'Bildirim sistemi başarıyla çalışıyor! APK için hazırız.',
         icon: '/icon-512.png'
       });
     } else {
-      alert('Lütfen önce bildirimleri aktif edin.');
+      alert('Tarayıcınız bildirimleri engelliyor. Lütfen adres çubuğundaki kilit simgesinden izin verin.');
     }
   };
 
