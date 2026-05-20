@@ -5,15 +5,12 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { initializeFirestore, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Using initializeFirestore instead of getFirestore to pass settings
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true, // Fix for transport errors in preview
-}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
