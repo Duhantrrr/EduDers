@@ -1,18 +1,62 @@
 {
   "name": "Öğrenci Asistanı",
   "short_name": "Asistan",
-  "description": "OCR ve Yapay Zeka destekli ders programı ve sınav takip asistanı.",
-  "start_url": "/",
+  "description": "OCR ve Yapay Zeka destekli ders programı ve sınav takip asistanı. Derslerini ve sınavlarını akıllı bildirimlerle yönet.",
+  "id": "com.ogrenci.asistan.app",
+  "scope": "/",
+  "start_url": "/?source=pwa",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#0a0a0a",
   "theme_color": "#10b981",
   "orientation": "portrait",
+  "lang": "tr",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Ders Programı",
+      "short_name": "Dersler",
+      "description": "Haftalık ders programınızı görüntüleyin",
+      "url": "/?tab=schedule",
+      "icons": [{ "src": "/icon-512.png", "sizes": "1408x768", "type": "image/jpeg" }]
+    },
+    {
+      "name": "OCR Tara",
+      "short_name": "Tara",
+      "description": "Yeni bir programı kamerayla tarayın",
+      "url": "/?tab=ocr",
+      "icons": [{ "src": "/icon-512.png", "sizes": "1408x768", "type": "image/jpeg" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "1408x768",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Öğrenci Asistanı Mobil Görünüm"
+    },
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1408x768",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Öğrenci Asistanı Masaüstü Görünüm"
+    }
+  ],
   "icons": [
     {
       "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "sizes": "1408x768",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "1408x768",
+      "type": "image/jpeg",
+      "purpose": "maskable"
     }
   ]
 }
