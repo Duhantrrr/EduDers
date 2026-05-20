@@ -28,6 +28,23 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    try {
+      setLoginError(null);
+      await signIn();
+    } catch (error: any) {
+      console.error('Login Interaction Error:', error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError('Tarayıcınız pencereyi engelledi. Lütfen izin verin veya başka bir tarayıcıdan deneyin.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setLoginError('Giriş ekranı kapatıldı.');
+      } else {
+        setLoginError('Google ile giriş yapılırken bir sorun oluştu. Lütfen tekrar deneyin.');
+      }
+    }
+  };
   const [settings, setSettings] = useState<AppSettings>({
     notificationsEnabled: false,
     notificationHour: 19, // Default to 7 PM
@@ -235,13 +252,29 @@ export default function App() {
             Ders programınız ve sınavlarınız her an yanınızda. Giriş yaparak verilerinizi bulutla senkronize edin.
           </p>
         </div>
-        <button
-          onClick={signIn}
-          className="bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center gap-3 transition-all hover:scale-105 active:scale-95"
-        >
-          <LogIn className="w-5 h-5" />
-          Google ile Giriş Yap
-        </button>
+        <div className="space-y-4 w-full max-w-xs mx-auto">
+          <button
+            onClick={handleLogin}
+            className="w-full bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:scale-105 active:scale-95 shadow-xl"
+          >
+            <LogIn className="w-5 h-5" />
+            Google ile Giriş Yap
+          </button>
+
+          {loginError && (
+            <motion.p 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              className="text-red-500 text-xs font-medium"
+            >
+              {loginError}
+            </motion.p>
+          )}
+
+          <p className="text-[10px] text-neutral-600">
+            Giriş yaptıktan sonra ders programınız otomatik olarak cihazlarınız arasında senkronize edilir.
+          </p>
+        </div>
       </div>
     );
   }

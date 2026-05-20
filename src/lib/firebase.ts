@@ -18,7 +18,16 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const signIn = () => signInWithPopup(auth, googleProvider);
+export const signIn = async () => {
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (error: any) {
+    console.error('Login Error:', error);
+    // If popup is blocked, we could potentially retry with redirect or show a message
+    throw error;
+  }
+};
+
 export const signOut = () => auth.signOut();
 
 // Collection names
