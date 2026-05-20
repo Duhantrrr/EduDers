@@ -18,7 +18,7 @@ import CountdownCards from './components/CountdownCards';
 import { TURKISH_HOLIDAYS } from './constants';
 import { format, addDays, isSameDay, parseISO, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { auth, db, signIn, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION } from './lib/firebase';
+import { auth, db, signIn, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION, writeBatch } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
@@ -213,8 +213,6 @@ export default function App() {
   const clearAllSchedule = async () => {
     if (!user || schedule.length === 0) return;
     
-    // Using writeBatch for optimized deletion
-    const { writeBatch } = await import('firebase/firestore');
     const batch = writeBatch(db);
     
     try {
@@ -262,14 +260,33 @@ export default function App() {
           </button>
 
           {loginError && (
-            <motion.p 
+            <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
-              className="text-red-500 text-xs font-medium"
+              className="space-y-3"
             >
-              {loginError}
-            </motion.p>
+              <p className="text-red-500 text-xs font-medium">
+                {loginError}
+              </p>
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <p className="text-[11px] text-red-400">
+                  Chrome kullanıyorsanız, tarayıcı pop-up pencereleri engelliyor olabilir. 
+                  Lütfen uygulamayı <b>yeni sekmede</b> açmayı deneyin.
+                </p>
+              </div>
+            </motion.div>
           )}
+
+          <div className="pt-2">
+            <a 
+              href={window.location.href} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-xs text-emerald-500 hover:underline decoration-emerald-500/30"
+            >
+              Uygulamayı Yeni Sekmede Aç
+            </a>
+          </div>
 
           <p className="text-[10px] text-neutral-600">
             Giriş yaptıktan sonra ders programınız otomatik olarak cihazlarınız arasında senkronize edilir.

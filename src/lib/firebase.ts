@@ -5,12 +5,20 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { initializeFirestore, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+// Safety check for empty config
+if (!firebaseConfig || !Object.keys(firebaseConfig).length) {
+  console.warn('Firebase config is empty. Ensure Firebase is set up in AI Studio.');
+}
 
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+const app = initializeApp(firebaseConfig || {});
+
+// Using initializeFirestore instead of getFirestore to pass settings
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true, // Fix for transport errors in preview/Chrome
+}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
@@ -20,7 +28,6 @@ export const signIn = async () => {
     return await signInWithPopup(auth, googleProvider);
   } catch (error: any) {
     console.error('Login Error:', error);
-    // If popup is blocked, we could potentially retry with redirect or show a message
     throw error;
   }
 };
@@ -31,4 +38,4 @@ export const signOut = () => auth.signOut();
 export const EVENTS_COLLECTION = 'events';
 export const SCHEDULE_COLLECTION = 'schedule';
 
-export { collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp };
+export { collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp, writeBatch };
