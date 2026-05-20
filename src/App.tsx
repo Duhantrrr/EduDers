@@ -19,8 +19,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TURKISH_HOLIDAYS } from './constants';
 import { format, addDays, isSameDay, parseISO, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { auth, db, signIn, signInRedirect, checkRedirectResult, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION, writeBatch } from './lib/firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { db, collection, query, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION, writeBatch } from './lib/firebase';
 
 export default function App() {
   return (
@@ -34,65 +33,17 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'ocr' | 'schedule' | 'settings' | 'ai'>('calendar');
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [schedule, setSchedule] = useState<WeeklySchedule[]>([]);
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadTimeout, setLoadTimeout] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     notificationsEnabled: false,
     notificationHour: 19, // Default to 7 PM
     theme: 'dark'
   });
 
-  const handleLogin = async () => {
-    try {
-      setLoginError(null);
-      // Force redirect as popups are problematic in preview/iframe
-      signInRedirect();
-    } catch (error: any) {
-      console.error('Login Error:', error);
-      setLoginError('Google ile giriş başlatılamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
-    }
-  };
-
-  // Auth State & Load Security
-  useEffect(() => {
-    // Timeout if Firebase takes too long to respond
-    const timer = setTimeout(() => {
-      if (loading) setLoadTimeout(true);
-    }, 6000);
-
-    checkRedirectResult().then((result) => {
-      if (result?.user) {
-        setLoading(false);
-      }
-    }).catch(err => {
-      console.error('Redirect Result Error:', err);
-    });
-
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-      clearTimeout(timer);
-    });
-
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
-  }, [loading]);
-
   // Firestore Sync
   useEffect(() => {
-    if (!user) {
-      setEvents([]);
-      setSchedule([]);
-      return;
-    }
-
-    const eventsQuery = query(collection(db, EVENTS_COLLECTION), where('userId', '==', user.uid));
-    const scheduleQuery = query(collection(db, SCHEDULE_COLLECTION), where('userId', '==', user.uid));
+    const eventsQuery = query(collection(db, EVENTS_COLLECTION));
+    const scheduleQuery = query(collection(db, SCHEDULE_COLLECTION));
 
     const unsubEvents = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as CalendarEvent);
@@ -118,25 +69,23 @@ function MainApp() {
       unsubEvents();
       unsubSchedule();
     };
-  }, [user]);
+  }, []);
 
-  // Global callback for OCR (keeping it for compatibility, but it should use Firebase)
+  // Global callback for OCR
   useEffect(() => {
     (window as any).addLessonsToSchedule = (lessons: WeeklySchedule[]) => {
-      if (!user) return;
       lessons.forEach(lesson => {
         const id = Math.random().toString(36).substr(2, 9);
         setDoc(doc(db, SCHEDULE_COLLECTION, id), {
           ...lesson,
           id,
-          userId: user.uid,
           updatedAt: serverTimestamp()
         });
       });
       setActiveTab('schedule');
     };
     return () => { (window as any).addLessonsToSchedule = undefined; };
-  }, [user]);
+  }, []);
 
   // Load settings from LocalStorage (settings remain local for now)
   useEffect(() => {
@@ -201,43 +150,35 @@ function MainApp() {
   }, [checkNotifications]);
 
   const addEvents = async (newEvents: CalendarEvent[]) => {
-    if (!user) return;
     for (const event of newEvents) {
       await setDoc(doc(db, EVENTS_COLLECTION, event.id), {
         ...event,
-        userId: user.uid,
         updatedAt: serverTimestamp()
       });
     }
   };
 
   const removeEvent = async (id: string) => {
-    if (!user) return;
     await deleteDoc(doc(db, EVENTS_COLLECTION, id));
   };
 
   const handleUpdateSchedule = async (newSchedule: WeeklySchedule[]) => {
-    if (!user) return;
-    // For simplicity, we just add missing ones or update. 
-    // In a real app we might diff or clear and re-add.
     for (const item of newSchedule) {
       const id = item.id || Math.random().toString(36).substr(2, 9);
       await setDoc(doc(db, SCHEDULE_COLLECTION, id), {
         ...item,
         id,
-        userId: user.uid,
         updatedAt: serverTimestamp()
       });
     }
   };
 
   const deleteScheduleItem = async (id: string) => {
-    if (!user) return;
     await deleteDoc(doc(db, SCHEDULE_COLLECTION, id));
   };
 
   const clearAllSchedule = async () => {
-    if (!user || schedule.length === 0) return;
+    if (schedule.length === 0) return;
     
     const batch = writeBatch(db);
     
@@ -255,90 +196,6 @@ function MainApp() {
       setDbError("Ders programı temizlenirken bir hata oluştu.");
     }
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 text-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full mb-6"
-        />
-        {loadTimeout && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="space-y-4"
-          >
-            <p className="text-neutral-400 text-sm">Yükleme beklenenden uzun sürüyor...</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="bg-neutral-900 text-white px-6 py-2 rounded-xl text-xs font-medium border border-neutral-800"
-            >
-              Yeniden Dene
-            </button>
-          </motion.div>
-        )}
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-8 text-center">
-        <div className="mb-12 space-y-4">
-          <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/10">
-            <BookOpen className="w-10 h-10 text-emerald-500" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Öğrenci Asistanı</h1>
-            <p className="text-neutral-500 text-sm mt-1">Derslerinizi ve sınavlarınızı tek yerden yönetin</p>
-          </div>
-        </div>
-        
-        <div className="space-y-4 w-full max-w-xs mx-auto">
-          <motion.button
-            whileTap={{ scale: 0.98 }}
-            onClick={handleLogin}
-            className="w-full bg-emerald-500 text-white font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:bg-emerald-400 shadow-xl shadow-emerald-500/20"
-          >
-            <LogIn className="w-5 h-5" />
-            Google ile Giriş Yap
-          </motion.button>
-
-          {loginError && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-2"
-            >
-              <p className="text-red-500 text-xs font-semibold">
-                Giriş Sorunu
-              </p>
-              <p className="text-[10px] text-red-300 leading-relaxed uppercase tracking-wider">
-                {loginError}
-              </p>
-            </motion.div>
-          )}
-
-          <div className="pt-6 border-t border-neutral-900 mt-6">
-            <a 
-              href={window.location.href} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 text-[11px] text-neutral-500 font-medium hover:text-emerald-500 transition-colors py-3 px-4 rounded-xl bg-neutral-900/50 border border-neutral-800"
-            >
-              Sorun Yaşıyorsanız Yeni Sekmede Açın
-            </a>
-          </div>
-
-          <p className="text-[10px] text-neutral-600 mt-6">
-            Giriş yaptıktan sonra ders programınız otomatik olarak cihazlarınız arasında senkronize edilir.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Header
   return (
@@ -368,14 +225,6 @@ function MainApp() {
             <h1 className="font-semibold text-lg tracking-tight">Öğrenci Asistanı</h1>
           </div>
           <div className="flex items-center gap-2">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={signOut}
-              className="p-2 text-neutral-500 hover:text-red-400 hover:bg-neutral-900 rounded-full transition-all"
-              title="Çıkış Yap"
-            >
-              <LogOut className="w-5 h-5" />
-            </motion.button>
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={() => setActiveTab('settings')}

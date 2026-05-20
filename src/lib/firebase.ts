@@ -4,7 +4,6 @@
  */
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { initializeFirestore, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -20,23 +19,6 @@ const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, dbId);
-
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-
-export const signIn = async () => {
-  try {
-    return await signInWithPopup(auth, googleProvider);
-  } catch (error: any) {
-    console.error('Login Error:', error);
-    throw error;
-  }
-};
-
-export const signInRedirect = () => signInWithRedirect(auth, googleProvider);
-export const checkRedirectResult = () => getRedirectResult(auth);
-
-export const signOut = () => auth.signOut();
 
 // Collection names
 export const EVENTS_COLLECTION = 'events';
