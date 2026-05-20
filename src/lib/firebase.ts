@@ -16,9 +16,12 @@ if (!firebaseConfig || !Object.keys(firebaseConfig).length) {
 const app = initializeApp(firebaseConfig || {});
 
 // Using initializeFirestore instead of getFirestore to pass settings
+const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+console.log('Initializing Firestore with DB ID:', dbId);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-});
+}, dbId);
+console.log('Firestore initialized successfully');
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

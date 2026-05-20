@@ -120,12 +120,14 @@ export default function App() {
     const savedSettings = localStorage.getItem('asistan_settings');
     if (savedSettings) setSettings(JSON.parse(savedSettings));
 
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          setSettings(prev => ({ ...prev, notificationsEnabled: true }));
-        }
-      });
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            setSettings(prev => ({ ...prev, notificationsEnabled: true }));
+          }
+        });
+      }
     }
   }, []);
 
@@ -136,6 +138,7 @@ export default function App() {
 
   // Notification Logic
   const checkNotifications = useCallback(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (!settings.notificationsEnabled || Notification.permission !== 'granted') return;
 
     const now = new Date();
