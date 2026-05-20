@@ -15,13 +15,22 @@ import EventList from './components/EventList';
 import SettingsPanel from './components/SettingsPanel';
 import TodayLessons from './components/TodayLessons';
 import CountdownCards from './components/CountdownCards';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { TURKISH_HOLIDAYS } from './constants';
 import { format, addDays, isSameDay, parseISO, isPast } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { auth, db, signIn, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION, writeBatch } from './lib/firebase';
+import { auth, db, signIn, signInRedirect, checkRedirectResult, signOut, collection, query, where, onSnapshot, setDoc, doc, deleteDoc, serverTimestamp, EVENTS_COLLECTION, SCHEDULE_COLLECTION, writeBatch } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
+
+function MainApp() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'ocr' | 'schedule' | 'settings' | 'ai'>('calendar');
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [schedule, setSchedule] = useState<WeeklySchedule[]>([]);
@@ -29,30 +38,43 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-
-  const handleLogin = async () => {
-    try {
-      setLoginError(null);
-      await signIn();
-    } catch (error: any) {
-      console.error('Login Interaction Error:', error);
-      if (error.code === 'auth/popup-blocked') {
-        setLoginError('Tarayıcınız pencereyi engelledi. Lütfen izin verin veya başka bir tarayıcıdan deneyin.');
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        setLoginError('Giriş ekranı kapatıldı.');
-      } else {
-        setLoginError('Google ile giriş yapılırken bir sorun oluştu. Lütfen tekrar deneyin.');
-      }
-    }
-  };
   const [settings, setSettings] = useState<AppSettings>({
     notificationsEnabled: false,
     notificationHour: 19, // Default to 7 PM
     theme: 'dark'
   });
 
+  const handleLogin = async (useRedirect = false) => {
+    try {
+      setLoginError(null);
+      if (useRedirect) {
+        signInRedirect();
+      } else {
+        await signIn();
+      }
+    } catch (error: any) {
+      console.error('Login Interaction Error:', error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError('Tarayıcınız pencereyi engelledi. Pop-up engelleyiciyi kapatın veya "Yeni Sekmede Aç" butonunu kullanın.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setLoginError('Giriş ekranı kapatıldı.');
+      } else {
+        setLoginError('Google ile giriş yapılırken bir sorun oluştu. Lütfen "Redirect" yöntemini deneyin.');
+      }
+    }
+  };
+
   // Auth State
   useEffect(() => {
+    // Check for redirect result on mount
+    checkRedirectResult().catch(err => {
+      console.error('Redirect Result Error:', err);
+      // Only set error if it's not a common expected error
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setLoginError('Yönlendirme sonrası giriş yapılırken bir hata oluştu.');
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -254,44 +276,51 @@ export default function App() {
           </p>
         </div>
         <div className="space-y-4 w-full max-w-xs mx-auto">
-          <button
-            onClick={handleLogin}
-            className="w-full bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:scale-105 active:scale-95 shadow-xl"
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleLogin(false)}
+            className="w-full bg-white text-neutral-950 font-bold py-4 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:bg-neutral-100 shadow-xl"
           >
             <LogIn className="w-5 h-5" />
             Google ile Giriş Yap
-          </button>
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleLogin(true)}
+            className="w-full bg-neutral-900 text-neutral-400 font-medium py-3 px-8 rounded-2xl flex items-center justify-center gap-3 transition-all hover:text-neutral-200 hover:bg-neutral-800 border border-neutral-800/50"
+          >
+            Yönlendirme ile Giriş (Alternatif)
+          </motion.button>
 
           {loginError && (
             <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              className="space-y-3"
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-2"
             >
-              <p className="text-red-500 text-xs font-medium">
+              <p className="text-red-500 text-xs font-semibold">
                 {loginError}
               </p>
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-                <p className="text-[11px] text-red-400">
-                  Chrome kullanıyorsanız, tarayıcı pop-up pencereleri engelliyor olabilir. 
-                  Lütfen uygulamayı <b>yeni sekmede</b> açmayı deneyin.
-                </p>
-              </div>
+              <p className="text-[10px] text-red-400/80 leading-relaxed">
+                Chrome/Safari kullanıyorsanız pop-up pencereler engellenmiş olabilir. 
+                Lütfen uygulamayı aşağıdaki butondan <b>yeni sekmede</b> açın.
+              </p>
             </motion.div>
           )}
 
-          <div className="pt-2">
+          <div className="pt-4">
             <a 
               href={window.location.href} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-xs text-emerald-500 hover:underline decoration-emerald-500/30"
+              className="inline-flex items-center gap-2 text-xs text-emerald-500 font-medium hover:text-emerald-400 transition-colors py-2 px-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10"
             >
               Uygulamayı Yeni Sekmede Aç
             </a>
           </div>
 
-          <p className="text-[10px] text-neutral-600">
+          <p className="text-[10px] text-neutral-600 mt-6">
             Giriş yaptıktan sonra ders programınız otomatik olarak cihazlarınız arasında senkronize edilir.
           </p>
         </div>
