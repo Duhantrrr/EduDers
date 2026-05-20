@@ -17,8 +17,8 @@ const app = initializeApp(firebaseConfig || {});
 
 // Using initializeFirestore instead of getFirestore to pass settings
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true, // Fix for transport errors in preview/Chrome
-}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+  experimentalForceLongPolling: true,
+});
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
