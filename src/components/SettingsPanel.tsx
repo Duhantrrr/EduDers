@@ -35,19 +35,25 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
       return;
     }
 
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-
-    if (Notification.permission === 'default') {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        setSettings({ ...settings, notificationsEnabled: true });
-        sendRealNotification('Bildirimler onaylandı! Test başarılı.');
+    try {
+      if (Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setSettings({ ...settings, notificationsEnabled: true });
+          await sendRealNotification('Bildirimler onaylandı! Test başarılı.');
+        } else {
+          alert('Bildirim izni reddedildi. Bildirimler için tarayıcı ayarlarından izin vermeniz gerekmektedir.');
+        }
+      } else if (Notification.permission === 'granted') {
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+        await sendRealNotification('Bildirim sistemi aktif! Sınavlarınıza hazırız.');
+      } else {
+        alert('Bildirim izni reddedilmiş. Lütfen adres çubuğundaki kilit simgesinden izin verin veya uygulamayı "Yeni Sekmede Aç" butonu ile açın.');
       }
-    } else if (Notification.permission === 'granted') {
-      sendRealNotification('Bildirim sistemi aktif! Sınavlarınıza hazırız.');
-    } else {
-      alert('Bildirim izni reddedilmiş. Lütfen adres çubuğundaki kilit simgesinden izin verin.');
+    } catch (error) {
+      console.error('Notification Test failed:', error);
+      alert('Bildirim gönderilirken bir hata oluştu. Lütfen uygulamayı "Yeni Sekmede Aç" butonu ile açıp deneyin.');
     }
   };
 
@@ -60,12 +66,16 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
       vibrate: [100, 50, 100]
     };
 
-    // Try service worker first (more reliable on mobile)
+    // Try service worker first (MANDATORY for mobile/APK behavior)
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration && 'showNotification' in registration) {
-        registration.showNotification(title, options);
-        return;
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && 'showNotification' in registration) {
+          await registration.showNotification(title, options);
+          return;
+        }
+      } catch (swError) {
+        console.error('Service Worker Notification failed:', swError);
       }
     }
 
