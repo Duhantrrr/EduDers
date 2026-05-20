@@ -1,0 +1,6 @@
+{
+  "name": "Akıllı Öğrenci Asistanı",
+  "description": "OCR destekli takvim, ders programı yönetimi ve akıllı sınav hatırlatıcıları sunan öğrenci asistanı.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
