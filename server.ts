@@ -271,7 +271,9 @@ async function startServer() {
           config: { responseMimeType: "application/json" }
         });
         if (result && result.text) {
-          responseData = JSON.parse(result.text.replace(/```json/g, '').replace(/```/g, '').trim());
+          const rawText = result.text.replace(/```json/g, '').replace(/```/g, '').trim();
+          console.log("Raw AI Response:", rawText);
+          responseData = JSON.parse(rawText);
         }
       }
 

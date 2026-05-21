@@ -133,7 +133,10 @@ export default function SettingsPanel({ settings, setSettings }: Props) {
                       min="0" 
                       max="23" 
                       value={settings.notificationHour}
-                      onChange={(e) => setSettings({ ...settings, notificationHour: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        console.log("Setting notification hour to:", e.target.value);
+                        setSettings({ ...settings, notificationHour: parseInt(e.target.value) });
+                      }}
                       className="flex-1 accent-emerald-500 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
                     />
                     <span className="text-sm font-mono bg-neutral-800 px-3 py-1 rounded-lg border border-neutral-700">

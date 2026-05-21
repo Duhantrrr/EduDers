@@ -47,6 +47,7 @@ function MainApp() {
 
     const unsubEvents = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as CalendarEvent);
+      console.log("Loaded events from Firestore:", data);
       setEvents(data);
       setDbError(null);
     }, (error) => {
