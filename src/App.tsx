@@ -132,6 +132,7 @@ function MainApp() {
         const notificationKey = `notif_${event.id}_for_${tomorrowStr}_sent_on_${todayStr}`;
         
         if (!localStorage.getItem(notificationKey)) {
+          console.log("Attempting to send notification for event:", event.title);
           new Notification(event.type === 'holiday' ? 'Tatil Hatırlatıcısı' : 'Sınav Hatırlatıcısı', {
             body: `Yarın ${event.title} ${event.type === 'holiday' ? 'sebebiyle resmi tatil!' : 'sınavınız var! Unutmayın.'}`,
             icon: '/icon-512.png',
